@@ -13,7 +13,7 @@ from django.db.models import Avg
 
 
 class ReportCardView(APIView):
-    permission_classes = [IsAuthenticated, IsTeacherOrPrincipal, IsPrincipal]
+    permission_classes = []
 
     def get(self, request, student_id):
         student = get_object_or_404(Student, id=student_id)

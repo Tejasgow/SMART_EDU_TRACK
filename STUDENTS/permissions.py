@@ -1,5 +1,5 @@
 from rest_framework import permissions
-from .models import ParentStudent,Student
+from .models import ParentStudent, Student
 
 class IsParentOrStudent(permissions.BasePermission):
     def has_permission(self, request, view):

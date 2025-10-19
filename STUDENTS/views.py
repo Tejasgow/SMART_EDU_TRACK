@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render,get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -6,14 +6,15 @@ from .serializers import (
     StudentRegistrationSerializer, LinkParentSerializer,
     SectionSerializer, StandardSerializer,
     AttendanceMarkSerializer, AttendanceSerializer,
-    SubjectSerializer
+    SubjectSerializer,MarkSerializer
 )
 from .models import Student, ParentStudent, Standard, Section, Attendance ,Subject
 from ACCOUNTS.models import user
+from PERFORMANCE.models import Exam,Mark
+from .permissions import IsParentOrStudent
 import json
 
-
-
+    
 class IsTeacher(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.role in ["teacher"]
@@ -42,38 +43,50 @@ class SubjectListCreateView(generics.ListCreateAPIView):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     permission_classes = [IsTeacher]
-
 class AttendanceMarkView(generics.CreateAPIView):
     queryset = Attendance.objects.all()
     serializer_class = AttendanceMarkSerializer
-    permission_classes = []  # Add your permission classes here as needed
+    parmission_classes = [IsAuthenticated,IsTeacher]
+    permission_classes = []
 
     def post(self, request, *args, **kwargs):
-        data = request.data
-        many = isinstance(data, list)
-        serializer = self.get_serializer(data=data, many=many)
+        many = isinstance(request.data, list)
+        serializer = self.get_serializer(data=request.data, many=many)
+        
         serializer.is_valid(raise_exception=True)
-
-        teacher = request.user if request.user.is_authenticated else User.objects.get(id=10)
+        
         records = []
+        if type(serializer.validated_data) == list:
+            
+            for item in serializer.validated_data:
+                student_id = int(item["student_id"])
+                date = item["date"]
+                status_ = item["status"]
+                
+                attendance = Attendance.objects.filter(student_id=student_id, date=date).first()
+                
+                if attendance:
+                    attendance.status = status_
+                    
+                    attendance.marked_by = request.user
+                    attendance.save()
+                else:
+                    obj = Attendance.objects.create(
+                        student_id=student_id,
+                        date=date,
+                        status=status_,
+                        marked_by=request.user
+                        )
+                    records.append(obj)
+        else :
+            obj, created = Attendance.objects.update_or_create(
+                                student_id=int(serializer.validated_data["student_id"]),
+                                date=serializer.validated_data["date"],
+                                defaults={"status": serializer.validated_data["status"], "marked_by": request.user})
+            records.append(obj)
+        return Response(AttendanceSerializer(records, many=True).data,status=status.HTTP_200_OK)
 
-        validated_items = serializer.validated_data if many else [serializer.validated_data]
-
-        for item in validated_items:
-            attendance, created = Attendance.objects.update_or_create(
-                student_id=item["student_id"],
-                date=item["date"],
-                defaults={
-                    "status": item["status"],
-                    "marked_by": teacher
-                }
-            )
-            records.append(attendance)
-
-        return Response(
-            AttendanceSerializer(records, many=True).data,
-            status=status.HTTP_200_OK
-        )
+    
 class StudentAttendanceView(generics.ListAPIView):
     serializer_class = AttendanceSerializer
     permission_classes = [IsAuthenticated]
@@ -205,3 +218,39 @@ class AttendanceReportParentView(generics.GenericAPIView):
             data.append(child_data)
 
         return Response({"children": data})
+
+
+class StudentMarkListView(generics.ListAPIView):
+    serializer_class = MarkSerializer
+    permission_classes=[IsAuthenticated,IsParentOrStudent]
+    queryset = Mark.objects.select_related('subject','exam','recorded_by','student')
+
+    def get_queryset(self):
+        student_id = self.kwargs.get('student_id')
+        student = get_object_or_404(Student,PK=student_id)
+        self.check_object_permissions(self.request,student)
+        qs=self.queryset.filter(student=student)
+        exam_id = self.request.query_params.get('exam')
+        subject_id = self.request.query_params.get('subject')
+        if exam_id:
+            qs = qs.filter(exam_id=exam_id)
+        if subject_id:
+            qs = qs.filter(subject_id=subject_id)
+
+        return qs.order_by('-exam__date','subject__name')
+    
+class MyMarkListView(generics.ListAPIView):
+    serializer_class=MarkSerializer
+    permission_classes=[IsAuthenticated]
+    queryset = Mark.objects.select_related('subject','exam','recorded_by','student')
+    
+    def get_queryset(self):
+        user = self.request.user
+        student = getattr(user,'student_profile',None)
+        if student:
+            return self.queryset.filter(student=student).order_by('-exam__date','subject__name')
+        chidren_ids = ParentStudent.objects.filter(parent=user).values_list('student_id',flat=True)
+        student_id=self.request.query_paramas.get('student')
+        if student_id and int(student_id) in set(chidren_ids):
+            return self.queryset.filter(student_id=student_id).order_by('-exam__date','subject__name')
+        return Mark.objects.none()

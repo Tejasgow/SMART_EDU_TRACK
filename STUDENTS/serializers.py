@@ -1,6 +1,31 @@
 from rest_framework import serializers
 from ACCOUNTS.models import user
 from .models import Student, Standard , Section , ParentStudent,Attendance,Subject
+from PERFORMANCE.models import Mark,Exam
+
+class SubjectSeializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subject
+        fields =['id','name','code']
+
+class ExamSerializers(serializers.ModelSerializer):
+    class Meta:
+        model = Exam 
+        fields =['id','name','date','total_marks']
+
+class MarkSerializer(serializers.ModelSerializer):
+    subject =SubjectSeializer(read_only=True)
+    exam = ExamSerializers(read_only=True)
+    recorded_by = serializers.StringRelatedField()
+
+    class Meta:
+        model =Mark
+        fields =[
+            'id','student','subject','exam','marks_obtained','max_marks','grade','remarks','recorded_by',
+            'updated_at'
+        ]
+        read_only_fields = ['recorded_by','updated_at']
+
 
 
 
@@ -115,15 +140,16 @@ class AttendanceMarkSerializer(serializers.Serializer):
     date = serializers.DateField()
     status = serializers.ChoiceField(choices=[("PRESENT", "Present"), ("ABSENT", "Absent")])
 
-    def validate_student_id(self, value):
-        if not user.objects.filter(id=value, role="Student").exists():
-            raise serializers.ValidationError("Student with this ID does not exist.")
-        return value
+
+    # def validate_student_id(self, value):
+    #     if not user.objects.filter(id=value, role="Student").exists():
+    #         raise serializers.ValidationError("Student with this ID does not exist.")
+    #     return value
 
 class AttendanceDailySerializer(serializers.ModelSerializer):
-    Student_name = serializers.StringRelatedField(source='Student.users.full_name', read_only=True)
-    Standard = serializers.CharField(source='Student.standard.name', read_only=True)
-    Section = serializers.CharField(source='Student.section.name', read_only=True)
+    student_name = serializers.StringRelatedField(source='Student.users.full_name', read_only=True)
+    standard = serializers.CharField(source='Student.standard.name', read_only=True)
+    section = serializers.CharField(source='Student.section.name', read_only=True)
 
     class Meta:
         model = Attendance

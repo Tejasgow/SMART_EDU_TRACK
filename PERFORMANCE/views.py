@@ -31,8 +31,6 @@ class MarkEntryListCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    
-
 class ExamListCreateView(ListCreateAPIView):
     queryset = Exam.objects.all().order_by('-date')
     serializer_class = examSerializer

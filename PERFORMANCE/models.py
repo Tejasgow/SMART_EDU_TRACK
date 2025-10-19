@@ -1,6 +1,6 @@
 from django.db import models
 from ACCOUNTS.models import user
-from STUDENTS.models import Student,Standard,Section,Subject
+from STUDENTS.models import Student,Standard,Section
 
 # Create your models here.
 class Exam(models.Model):
@@ -17,7 +17,7 @@ class Exam(models.Model):
 class Mark(models.Model):
     exam = models.ForeignKey(Exam, on_delete=models.CASCADE)
     student = models.ForeignKey(Student, on_delete=models.CASCADE)
-    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    subject = models.CharField(max_length=20)
     marks_obtained = models.DecimalField(max_digits=5, decimal_places=2)
     max_marks = models.DecimalField(max_digits=5, decimal_places=2)
     remarks = models.TextField(blank=True, null=True)
