@@ -149,6 +149,7 @@ class AttendanceReportPrincipalView(generics.GenericAPIView):
             student_record = queryset.filter(student_id=sid)
             if not student_record.exists():
                 continue
+            
             user = student_record.first().student
             total_days = student_record.count()
             total_present = student_record.filter(status="PRESENT").count()
