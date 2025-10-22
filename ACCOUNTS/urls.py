@@ -12,4 +12,3 @@ urlpatterns = [
     path('token-refresh/', TokenRefreshView.as_view(), name='token_refresh'),  # Refresh
     path('token-verify/', TokenVerifyView.as_view(), name='token_verify'),      # Verify Token
 ]
-
