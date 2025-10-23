@@ -1,96 +1,82 @@
 from rest_framework import serializers
-from .models import user
 from django.contrib.auth import authenticate
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.encoding import force_bytes, force_str
 from django.contrib.auth.tokens import default_token_generator
-
-class CreateUserserializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
-    class Meta:
-        model=user
-        fields=['username','email','password','role','first_name','last_name']
-
-    def validate_role(self,value):
-        if value not in ['teacher','parent']:
-            raise serializers.ValidationError("Role must be teacher or parent.")
-        return value
-    
-    def create(self,validated_data):
-        password = validated_data.pop('password')
-        users = user(**validated_data)
-        users.set_password(password)
-        users.save()
-        return users
+from django.utils.encoding import force_str, force_bytes
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from .models import User
 
 
-class CreateStudentSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True)
+class CreateUserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
-        model = user
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role', 'password']
+        model = User
+        fields = ['username', 'email', 'password', 'role', 'first_name', 'last_name']
 
     def validate_role(self, value):
-        if value != 'student':  
-            raise serializers.ValidationError("Role student")
-        return value
-    def create(self, validated_data):   
+        # Ensure roles match User model uppercase values
+        allowed_roles = ['TEACHER', 'PARENT']
+        if value.upper() not in allowed_roles:
+            raise serializers.ValidationError(f"Role must be one of {allowed_roles}.")
+        return value.upper()
+
+    def create(self, validated_data):
         password = validated_data.pop('password')
-        users = user(**validated_data)
-        users.set_password(password)   
-        users.save()
-        return users
-    
+        user = User(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
 
 
 class SessionLoginSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
-    def validate(self, data):
-        username = data.get("username")
-        password = data.get("password")
+    def validate(self, attrs):
+        username = attrs.get("username")
+        password = attrs.get("password")
 
         user = authenticate(username=username, password=password)
-        if user is None:
-            raise serializers.ValidationError("Invalid credentials")
+
+        if not user:
+            raise serializers.ValidationError("Invalid username or password")
 
         if not user.is_active:
-            raise serializers.ValidationError("User account is disabled")
+            raise serializers.ValidationError("Account disabled, contact administrator")
 
-        data['user'] = user
-        return data
+        return {"user": user}
+
+
 class PasswordResetRequestSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def validate_email(self, value):
-        try:
-            user = user.objects.get(email=value)
-        except user.DoesNotExist:
-            raise serializers.ValidationError("User with this email does not exist.")
+        if not User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("User with this email does not exist")
         return value
-    
+
+
 class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
-    new_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
 
     def validate(self, data):
         try:
-            uid = force_str(urlsafe_base64_decode(data('uid')))
-            users = user.objects.get(pk=uid)
-        except (TypeError, ValueError, OverflowError, user.DoesNotExist):
-            raise serializers.ValidationError("Invalid UID.")
-        if not default_token_generator.check_token(users, data['token']):
-            raise serializers.ValidationError("Invalid or expired token.")
-        
-        data['user'] = users
+            uid = force_str(urlsafe_base64_decode(data["uid"]))
+            user = User.objects.get(pk=uid)
+        except (User.DoesNotExist, ValueError, TypeError, OverflowError):
+            raise serializers.ValidationError("Invalid UID")
+
+        if not default_token_generator.check_token(user, data["token"]):
+            raise serializers.ValidationError("Invalid or expired token")
+
+        data["user"] = user
         return data
-    
+
     def save(self):
-        users = self.validated_data['user']
-        new_password = self.validated_data['new_password']
-        users.set_password(new_password)
-        users.save()
-        return users
+        user = self.validated_data["user"]
+        new_password = self.validated_data["new_password"]
+        user.set_password(new_password)
+        user.save()
+        return user

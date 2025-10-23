@@ -1,4 +1,7 @@
-from django.shortcuts import render,get_object_or_404
+from django.shortcuts import render
+
+# Create your views here.
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -6,68 +9,74 @@ from .serializers import (
     StudentRegistrationSerializer, LinkParentSerializer,
     SectionSerializer, StandardSerializer,
     AttendanceMarkSerializer, AttendanceSerializer,
-    SubjectSerializer,MarkSerializer
+    SubjectSerializer, MarkSerializer
 )
-from .models import Student, ParentStudent, Standard, Section, Attendance ,Subject
-from ACCOUNTS.models import user
-from PERFORMANCE.models import Exam,Mark
-from .permissions import IsParentOrStudent
-import json
+from .models import Student, ParentStudent, Standard, Section, Attendance, Subject
+from ACCOUNTS.models import User
+from PERFORMANCE.models import Exam, Mark
+from .permissions import IsTeacher, IsParentOrStudent
 
-    
-class IsTeacher(permissions.BasePermission):
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role in ["teacher"]
 
+# ------------------------------
+# Student Registration & Linking
+# ------------------------------
 class StudentRegistrationView(generics.CreateAPIView):
     queryset = Student.objects.all()
     serializer_class = StudentRegistrationSerializer
-    permission_classes = [IsTeacher]
+    permission_classes = [IsAuthenticated]
 
-class LinkparentToStudentView(generics.CreateAPIView):
+
+class LinkParentToStudentView(generics.CreateAPIView):
     queryset = ParentStudent.objects.all()
     serializer_class = LinkParentSerializer
-    permission_classes = [IsTeacher]
+    permission_classes = [IsAuthenticated]
 
-class StandardListCreatView(generics.ListCreateAPIView):
+
+# ------------------------------
+# Standard, Section, Subject CRUD
+# ------------------------------
+class StandardListCreateView(generics.ListCreateAPIView):
     queryset = Standard.objects.all()
     serializer_class = StandardSerializer
-    permission_classes = [IsTeacher]
+    permission_classes = [IsAuthenticated]
+
 
 class SectionListCreateView(generics.ListCreateAPIView):
     queryset = Section.objects.all()
     serializer_class = SectionSerializer
-    permission_classes = [IsTeacher]
+    permission_classes = [IsAuthenticated]
+
 
 class SubjectListCreateView(generics.ListCreateAPIView):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
-    permission_classes = [IsTeacher]
+    permission_classes = [IsAuthenticated]
+
+
+# ------------------------------
+# Attendance Views
+# ------------------------------
 class AttendanceMarkView(generics.CreateAPIView):
     queryset = Attendance.objects.all()
     serializer_class = AttendanceMarkSerializer
-    parmission_classes = [IsAuthenticated,IsTeacher]
-    permission_classes = []
+    # permission_classes = [IsAuthenticated, IsTeacher]
+    permission_classes=[]
 
     def post(self, request, *args, **kwargs):
         many = isinstance(request.data, list)
         serializer = self.get_serializer(data=request.data, many=many)
-        
         serializer.is_valid(raise_exception=True)
-        
+
         records = []
-        if type(serializer.validated_data) == list:
-            
+        if isinstance(serializer.validated_data, list):
             for item in serializer.validated_data:
                 student_id = int(item["student_id"])
                 date = item["date"]
                 status_ = item["status"]
-                
+
                 attendance = Attendance.objects.filter(student_id=student_id, date=date).first()
-                
                 if attendance:
                     attendance.status = status_
-                    
                     attendance.marked_by = request.user
                     attendance.save()
                 else:
@@ -76,94 +85,114 @@ class AttendanceMarkView(generics.CreateAPIView):
                         date=date,
                         status=status_,
                         marked_by=request.user
-                        )
+                    )
                     records.append(obj)
-        else :
+        else:
             obj, created = Attendance.objects.update_or_create(
-                                student_id=int(serializer.validated_data["student_id"]),
-                                date=serializer.validated_data["date"],
-                                defaults={"status": serializer.validated_data["status"], "marked_by": request.user})
+                student_id=int(serializer.validated_data["student_id"]),
+                date=serializer.validated_data["date"],
+                defaults={"status": serializer.validated_data["status"], "marked_by": request.user}
+            )
             records.append(obj)
-        return Response(AttendanceSerializer(records, many=True).data,status=status.HTTP_200_OK)
 
-    
+        return Response(AttendanceSerializer(records, many=True).data, status=status.HTTP_200_OK)
+
+
 class StudentAttendanceView(generics.ListAPIView):
     serializer_class = AttendanceSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         student_id = self.kwargs["student_id"]
-        if self.request.user.role == "student" and self.request.user.id != int(student_id):
+        # Student can view only their own attendance
+        if self.request.user.role == "STUDENT" and self.request.user.id != int(student_id):
             return Attendance.objects.none()
         return Attendance.objects.filter(student_id=student_id).order_by("-date")
 
+
 class ClassAttendanceView(generics.ListAPIView):
     serializer_class = AttendanceSerializer
-    permission_classes = [IsTeacher, IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTeacher]
 
     def get_queryset(self):
         section_id = self.kwargs["section_id"]
-        section = Section.objects.get(id=section_id)
+        section = get_object_or_404(Section, id=section_id)
         date = self.request.query_params.get("date")
         user_ids = [student.user.id for student in Student.objects.filter(section=section)]
-        students = user.objects.filter(id__in=user_ids, role="student")
+        students = User.objects.filter(id__in=user_ids, role="STUDENT")
 
         if date:
             return Attendance.objects.filter(student__in=students, date=date)
         return Attendance.objects.filter(student__in=students).order_by("-date")
 
+
+# ------------------------------
 # Utility
+# ------------------------------
 def calculate_attendance_percentage(present_days, total_days):
     if total_days == 0:
         return "0%"
     percentage = (present_days / total_days) * 100
     return f"{percentage:.2f}%"
 
+
+# ------------------------------
+# Attendance Reports
+# ------------------------------
+
 class AttendanceReportPrincipalView(generics.GenericAPIView):
+    """
+    Allows principals (ADMIN role) to view attendance reports for all students,
+    optionally filtered by standard, section, and date range.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         queryset = Attendance.objects.all()
-        standard = request.query_params.get("standard")
-        section = request.query_params.get("section")
+        standard_name = request.query_params.get("standard")
+        section_name = request.query_params.get("section")
         from_date = request.query_params.get("from_date")
         to_date = request.query_params.get("to_date")
 
-        if standard:
-            std = Standard.objects.filter(name=standard)
-            students = Student.objects.filter(standard=std)
-            users = [student.user for student in students]
-            queryset = queryset.filter(student__in=users)
-        if section:
-            sec = Section.objects.filter(name=section)
-            students = Student.objects.filter(section=sec)
-            users = [student.user for student in students]
-            queryset = queryset.filter(student__in=users)
+        # Filter by standard
+        if standard_name:
+            standards = Standard.objects.filter(name=standard_name)
+            students = Student.objects.filter(standard__in=standards)
+            queryset = queryset.filter(student__in=[s.user for s in students])
+
+        # Filter by section
+        if section_name:
+            sections = Section.objects.filter(name=section_name)
+            students = Student.objects.filter(section__in=sections)
+            queryset = queryset.filter(student__in=[s.user for s in students])
+
+        # Filter by date range
         if from_date and to_date:
             queryset = queryset.filter(date__range=[from_date, to_date])
-        
+
+        # Build summary per student
         summary_data = []
         student_ids = queryset.values_list("student_id", flat=True).distinct()
-
         for sid in student_ids:
-            student_record = queryset.filter(student_id=sid)
-            if not student_record.exists():
+            student_attendance = queryset.filter(student_id=sid)
+            if not student_attendance.exists():
                 continue
-            
-            user = student_record.first().student
-            total_days = student_record.count()
-            total_present = student_record.filter(status="PRESENT").count()
-            total_absent = student_record.filter(status="ABSENT").count()
-            student = Student.objects.filter(user=user)
+            student_obj = student_attendance.first().student
+            total_days = student_attendance.count()
+            total_present = student_attendance.filter(status="PRESENT").count()
+            total_absent = student_attendance.filter(status="ABSENT").count()
+
+            student_record = Student.objects.filter(user=student_obj).first()
             summary_data.append({
-                "student_name": f"{user.first_name} {user.last_name}",
-                "standard": student.first().standard.name if student.exists() else "",
-                "section": student.first().section.name if student.exists() else "",
+                "student_name": f"{student_obj.first_name} {student_obj.last_name}",
+                "standard": student_record.standard.name if student_record else "",
+                "section": student_record.section.name if student_record else "",
                 "total_present": total_present,
                 "total_absent": total_absent,
                 "attendance_percentage": calculate_attendance_percentage(total_present, total_days)
             })
 
+        # Overall summary
         total_students = len(student_ids)
         total_days = queryset.values("date").distinct().count()
         overall_present = queryset.filter(status="PRESENT").count()
@@ -176,10 +205,10 @@ class AttendanceReportPrincipalView(generics.GenericAPIView):
                 "average_attendance": overall_percentage
             },
             "records": summary_data
-        })
+        }, status=status.HTTP_200_OK)
 
 class AttendanceReportParentView(generics.GenericAPIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated,IsParentOrStudent]
 
     def get(self, request, *args, **kwargs):
         parent = request.user
@@ -188,7 +217,6 @@ class AttendanceReportParentView(generics.GenericAPIView):
         to_date = request.query_params.get("to_date")
 
         data = []
-        
         for student_ in linked_students:
             user = student_.user
             user_records = Attendance.objects.filter(student=user)
@@ -197,13 +225,13 @@ class AttendanceReportParentView(generics.GenericAPIView):
 
             if not user_records.exists():
                 continue
-        
+
             total_days = user_records.count()
             total_present = user_records.filter(status="PRESENT").count()
             total_absent = user_records.filter(status="ABSENT").count()
 
             child_data = {
-                "student_name": f"{student_.users.first_name} {student_.users.last_name}",
+                "student_name": f"{student_.user.first_name} {student_.user.last_name}",
                 "standard": student_.standard.name,
                 "section": student_.section.name,
                 "summary": {
@@ -212,25 +240,28 @@ class AttendanceReportParentView(generics.GenericAPIView):
                     "absent": total_absent,
                     "percentage": calculate_attendance_percentage(total_present, total_days)
                 },
-               "records": AttendanceMarkSerializer(user_records, many=True).data
-
+                "records": AttendanceSerializer(user_records, many=True).data
             }
-
             data.append(child_data)
 
         return Response({"children": data})
 
 
+# ------------------------------
+# Marks Views
+# ------------------------------
 class StudentMarkListView(generics.ListAPIView):
     serializer_class = MarkSerializer
-    permission_classes=[IsAuthenticated,IsParentOrStudent]
-    queryset = Mark.objects.select_related('subject','exam','recorded_by','student')
+    # permission_classes = [IsAuthenticated, IsParentOrStudent]
+    permission_classes = []
+    queryset = Mark.objects.select_related('subject', 'exam', 'entered_by', 'student')
 
     def get_queryset(self):
         student_id = self.kwargs.get('student_id')
-        student = get_object_or_404(Student,PK=student_id)
-        self.check_object_permissions(self.request,student)
-        qs=self.queryset.filter(student=student)
+        student = get_object_or_404(Student, pk=student_id)
+        self.check_object_permissions(self.request, student)
+        qs = self.queryset.filter(student=student)
+
         exam_id = self.request.query_params.get('exam')
         subject_id = self.request.query_params.get('subject')
         if exam_id:
@@ -238,20 +269,24 @@ class StudentMarkListView(generics.ListAPIView):
         if subject_id:
             qs = qs.filter(subject_id=subject_id)
 
-        return qs.order_by('-exam__date','subject__name')
-    
+        return qs.order_by('-exam__date', 'subject__name')
+
+
 class MyMarkListView(generics.ListAPIView):
-    serializer_class=MarkSerializer
-    permission_classes=[IsAuthenticated]
-    queryset = Mark.objects.select_related('subject','exam','recorded_by','student')
-    
+    serializer_class = MarkSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Mark.objects.select_related('subject', 'exam', 'entered_by', 'student')
+
     def get_queryset(self):
         user = self.request.user
-        student = getattr(user,'student_profile',None)
+        student = getattr(user, 'student', None)
         if student:
-            return self.queryset.filter(student=student).order_by('-exam__date','subject__name')
-        chidren_ids = ParentStudent.objects.filter(parent=user).values_list('student_id',flat=True)
-        student_id=self.request.query_paramas.get('student')
-        if student_id and int(student_id) in set(chidren_ids):
+            return self.queryset.filter(student=student).order_by('-exam__date', 'subject__name')
+
+        # If parent, allow children
+        children_ids = ParentStudent.objects.filter(parent=user).values_list('student_id', flat=True)
+        student_id = self.request.query_params.get('student_id')
+        if student_id and int(student_id) in set(children_ids):
             return self.queryset.filter(student_id=student_id).order_by('-exam__date','subject__name')
+
         return Mark.objects.none()

@@ -1,81 +1,121 @@
 from django.shortcuts import render
-from rest_framework.generics import CreateAPIView 
-from .serializers import CreateUserserializer , SessionLoginSerializer  , PasswordResetRequestSerializer , PasswordResetConfirmSerializer
-from .models import user
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.authentication import SessionAuthentication
+from rest_framework.generics import CreateAPIView, GenericAPIView
 from rest_framework.views import APIView
-from rest_framework.views import status
-from rest_framework import generics
 from rest_framework.response import Response
-from django.contrib.auth import login,logout
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth import login, logout
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth.tokens import default_token_generator
-from django.utils.http import urlsafe_base64_decode
+from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 
+from .models import User
+from .serializers import (
+    CreateUserSerializer, 
+    SessionLoginSerializer, 
+    PasswordResetRequestSerializer, 
+    PasswordResetConfirmSerializer
+)
 
-class createTeacherParentView(CreateAPIView):
-    serializer_class=CreateUserserializer
-    permission_classes=[IsAuthenticated]
-    authentication_classes=[SessionAuthentication]
 
-    def post(self,request,*args,**kwargs):
-        return super().post(request,*args,**kwargs)
+# ------------------ Create Teacher or Parent ------------------
+class CreateTeacherParentView(CreateAPIView):
+    serializer_class = CreateUserSerializer
+    permission_classes = []
 
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
+
+# ------------------ Session Login ------------------
 class SessionLoginView(APIView):
+    permission_classes = []
+
     def post(self, request, *args, **kwargs):
         serializer = SessionLoginSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.validated_data['user']  # Extract the user
-            login(request, user)  # This logs in the user (creates session)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]  # using optimized serializer
+        login(request, user)
 
-            return Response({
-                "message": "Login successful",
-                "user": {
-                    "id": user.id,
-                    "username": user.username,
-                    "email": user.email,
-                    "role": user.role,
-                }
-            }, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+            },
+            "tokens": {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            }
+        }, status=status.HTTP_200_OK)
 
-class sessionlogoutview(APIView):
-    def get(self,request,*args,**kwargs):
+
+# ------------------ JWT Login ------------------
+class JWTLoginView(APIView):
+    permission_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = SessionLoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "message": "Login successful",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "role": user.role,
+            },
+            "tokens": {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+            }
+        }, status=status.HTTP_200_OK)
+
+
+# ------------------ Session Logout ------------------
+class SessionLogoutView(APIView):
+    permission_classes = []
+
+    def get(self, request, *args, **kwargs):
         logout(request)
-        return Response({"message":"logout successfull"},status=status.HTTP_200_OK)
+        return Response({"message": "Logout successful"}, status=status.HTTP_200_OK)
 
 
-
-class PasswordResetRequestView(generics.GenericAPIView):
+# ------------------ Password Reset Request ------------------
+class PasswordResetRequestView(GenericAPIView):
     serializer_class = PasswordResetRequestSerializer
+    permission_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        user = User.objects.get(email=serializer.validated_data["email"])
 
-        users = user.objects.get(email=serializer.validated_data['email'])
-        uid = urlsafe_base64_decode(force_bytes(users.pk))
-        token = default_token_generator.make_token(users)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
 
-        reset_link = f"http://example.com/reset-password-confirm/?uid={uid}&token={token}"
+        reset_link = f"http://127.0.0.1:8000/api/accounts/password-reset-confirm/?uid={uid}&token={token}"
 
         return Response(
-            {"message": "Password reset link has been sent to your email.", "reset_link": reset_link}, 
-            status=status.HTTP_200_OK
-            )
-    
+            {"message": "Password reset link generated", "reset_link": reset_link},
+            status=status.HTTP_200_OK,
+        )
 
-class PasswordResetConfirmView(generics.GenericAPIView):
+
+# ------------------ Password Reset Confirm ------------------
+class PasswordResetConfirmView(GenericAPIView):
     serializer_class = PasswordResetConfirmSerializer
+    permission_classes = []
 
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
         serializer.save()
-
-        return Response(
-            {"message": "Password reset successful"},
-            status=status.HTTP_200_OK
-            )
+        return Response({"message": "Password reset successful"}, status=status.HTTP_200_OK)

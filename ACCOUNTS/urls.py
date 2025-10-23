@@ -1,14 +1,25 @@
 from django.urls import path
 from . import views
-from django.views.decorators.csrf import csrf_exempt
-from rest_framework_simplejwt.views import TokenObtainPairView,TokenRefreshView,TokenVerifyView
+from rest_framework_simplejwt.views import (
+    TokenObtainPairView,
+    TokenRefreshView,
+    TokenVerifyView
+)
+
 urlpatterns = [
-    path('createteacherparent/',views.createTeacherParentView.as_view()),
-    path('login/',csrf_exempt(views.SessionLoginView.as_view()),name="session-login"),
-    path('logout/',csrf_exempt(views.sessionlogoutview.as_view()),name="session-logout"),
-    path('PasswordReset/',views.PasswordResetRequestView.as_view(),name="ResetPassword"),
-    path('PasswordCofirm/',views.PasswordResetConfirmView.as_view(),name="ConfirmPassword"),
-    path('gettoken/', TokenObtainPairView.as_view(), name='token_obtain_pair'),   # Login
-    path('token-refresh/', TokenRefreshView.as_view(), name='token_refresh'),  # Refresh
-    path('token-verify/', TokenVerifyView.as_view(), name='token_verify'),      # Verify Token
+    # User management
+    path("create-teacher-parent/", views.CreateTeacherParentView.as_view(), name="create-teacher-parent"),
+    
+    # Session-based login/logout
+    path("login/", views.SessionLoginView.as_view(), name="session-login"),
+    path("logout/", views.SessionLogoutView.as_view(), name="session-logout"),
+
+    # Password reset
+    path("password-reset-request/", views.PasswordResetRequestView.as_view(), name="password-reset-request"),
+    path("password-reset-confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),
+
+    # JWT authentication
+    path("gettoken/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
+    path("refreshtoken/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("verifytoken/", TokenVerifyView.as_view(), name="token_verify"),
 ]

@@ -1,7 +1,10 @@
 from django.urls import path
-from . import views
+from .views import MarkEntryView, ExamListCreateView
 
-urlpatterns = [    
-    path('marks/entry/', views.MarkEntryListCreateView.as_view(), name='mark-entry'),
-    path('exams/', views.ExamListCreateView.as_view(), name='exam-list-create'),
+urlpatterns = [
+    # Marks Entry
+    path("marks/entry/", MarkEntryView.as_view(), name="marks-entry"),
+
+    # Exam List and Create
+    path("exams/", ExamListCreateView.as_view(), name="exam-list-create"),
 ]
