@@ -7,7 +7,10 @@ from rest_framework.permissions import IsAuthenticated
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from django.db.models import Avg
-
+from reportlab.lib import colors
+from reportlab.lib.units import inch
+from reportlab.platypus import Table, TableStyle
+from io import BytesIO
 from accounts.permissions import IsTeacherOrPrincipal, IsPrincipal
 from students.models import Student
 from performance.models import Mark
@@ -23,27 +26,68 @@ class ReportCardView(APIView):
         student = get_object_or_404(Student, id=student_id)
         marks = Mark.objects.filter(student=student)
 
-        # Create PDF response
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = f'attachment; filename="report_card_{student_id}.pdf"'
+        # Create a byte buffer for PDF
+        buffer = BytesIO()
 
-        p = canvas.Canvas(response, pagesize=A4)
-        p.setFont("Helvetica-Bold", 14)
-        p.drawString(100, 800, f"Report Card - {student.user.get_full_name()}")
+        # Create a canvas
+        p = canvas.Canvas(buffer, pagesize=A4)
+        width, height = A4
+
+        # Title
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(200, height - 80, f"Report Card")
 
         p.setFont("Helvetica", 12)
-        y = 760
-        if not marks.exists():
-            p.drawString(100, y, "No marks available.")
-        else:
+        p.drawString(100, height - 110, f"Student: {student.user.get_full_name()}")
+        p.drawString(100, height - 130, f"Student ID: {student.id}")
+
+        # Prepare table data
+        y_position = height - 200
+        data = [["Subject", "Marks Obtained", "Max Marks", "Grade"]]  # table header
+
+        if marks.exists():
             for mark in marks:
-                p.drawString(100, y, f"{mark.subject.name}: {mark.marks_obtained}/{mark.max_marks} - Grade: {mark.grade}")
-                y -= 20
+                data.append([
+                    mark.subject.name,
+                    str(mark.marks_obtained),
+                    str(mark.max_marks),
+                    mark.grade
+                ])
+        else:
+            data.append(["No marks available", "", "", ""])
+
+        # Create the table
+        table = Table(data, colWidths=[2.5 * inch, 1.5 * inch, 1.5 * inch, 1.0 * inch])
+
+        # Add some styling
+        style = TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ])
+        table.setStyle(style)
+
+        # Render the table
+        table.wrapOn(p, width, height)
+        table.drawOn(p, 70, y_position - 20 * len(data))
 
         p.showPage()
         p.save()
-        return response
 
+        # Get PDF data
+        pdf = buffer.getvalue()
+        buffer.close()
+
+        # Create HTTP response
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="report_card_{student_id}.pdf"'
+        response.write(pdf)
+        return response
 
 # ------------------------------
 # Class Performance Summary
