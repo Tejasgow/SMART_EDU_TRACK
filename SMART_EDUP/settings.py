@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'report',
     'students',
     'teachers',
+    'assignments'
     
 ]
 
@@ -165,7 +166,7 @@ SIMPLE_JWT = {
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
         'rest_framework.authentication.TokenAuthentication',  # if you want TokenAuth too
     ],
@@ -176,16 +177,18 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
 }
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",  # for Vite
-    "http://localhost:3000",  # for Create React App
-]
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
 
 
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:5173",  # for Vite
+#     "http://localhost:3000",  # for Create React App
+# ]
+# CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_CREDENTIALS = True
 
 
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 
 

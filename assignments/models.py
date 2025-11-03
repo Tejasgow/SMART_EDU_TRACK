@@ -2,9 +2,7 @@ from django.db import models
 from students.models import Student, Subject
 from accounts.models import User
 
-# ============================================================
-# 📌 Assignment File Upload Path
-# ============================================================
+
 def assignment_upload_path(instance, filename):
     """
     Generates file path for uploaded assignment files.
@@ -15,9 +13,7 @@ def assignment_upload_path(instance, filename):
     return f"assignments/{instance.subject.name}/{filename}"
 
 
-# ============================================================
-# 📌 Assignment Model
-# ============================================================
+
 class Assignment(models.Model):
     """
     Represents an assignment given by a teacher or principal to students.
@@ -62,3 +58,38 @@ class Assignment(models.Model):
         Returns a human-readable string representation.
         """
         return f"{self.title} ({self.subject})"
+
+class AssignmentSubmission(models.Model):
+    """
+    Represents a student's submission for an assignment.
+
+    Fields:
+        - assignment: Related Assignment.
+        - student: Student who submitted the assignment.
+        - submitted_file: Uploaded submission file. 
+        - submitted_at: Timestamp of submission.
+        - grade: Optional grade assigned to the submission.
+    """
+    assignment = models.ForeignKey(
+        Assignment,
+        on_delete=models.CASCADE,
+        related_name='submissions'
+    )
+    student = models.ForeignKey(
+        Student,
+        on_delete=models.CASCADE,
+        related_name='assignment_submissions'
+    )
+    submitted_file = models.FileField(upload_to='assignment_submissions/')
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    grade = models.CharField(max_length=10, blank=True, null=True)
+
+    class Meta:
+        unique_together = ('assignment', 'student')
+    
+
+    def __str__(self):
+        """
+        Returns a human-readable string representation.
+        """
+        return f"Submission of {self.student.user.get_full_name()} for {self.assignment.title}"

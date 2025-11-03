@@ -8,7 +8,8 @@ from .models import Student, Standard, Section, ParentStudent, Attendance, Subje
 #  STUDENT REGISTRATION SERIALIZER
 # ============================================================
 class StudentRegistrationSerializer(serializers.ModelSerializer):
-    name = serializers.CharField(write_only=True)
+    firstname = serializers.CharField(write_only=True)
+    lastname = serializers.CharField(write_only=True)
     email = serializers.EmailField(write_only=True)
     password = serializers.CharField(write_only=True)
     standard_id = serializers.IntegerField(write_only=True)
@@ -16,7 +17,7 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Student
-        fields = ["id", "name", "email", "password", "standard_id", "section_id"]
+        fields = ["id", "firstname", "lastname", "email", "password", "standard_id", "section_id"]
 
     def create(self, validated_data):
         """
@@ -25,8 +26,9 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
         user = User.objects.create(
             username=validated_data["email"],
             email=validated_data["email"],
-            first_name=validated_data["name"],
-            role="student"
+            first_name=validated_data["firstname"],
+            last_name=validated_data["lastname"],
+            role="STUDENT"
         )
         user.set_password(validated_data["password"])
         user.save()
@@ -49,7 +51,8 @@ class StudentRegistrationSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         return {
             "student_id": instance.id,
-            "name": instance.user.first_name,
+            "firstname": instance.user.first_name,
+            "lastname": instance.user.last_name,
             "email": instance.user.email,
             "standard": instance.standard.name if instance.standard else None,
             "section": instance.section.name if instance.section else None,

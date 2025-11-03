@@ -6,7 +6,7 @@ class IsTeacherOrPrincipal(BasePermission):
         if not user or not user.is_authenticated:
             return False
         
-        return user.role in ['teacher', 'principal']
+        return user.role in ['TEACHER']
     
 class IsPrincipal(BasePermission):
     def has_permission(self, request, view):
@@ -15,3 +15,11 @@ class IsPrincipal(BasePermission):
             return False
         
         return user.role in [ 'principal']
+
+class IsStudent(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        
+        return user.role in ['STUDENT']
